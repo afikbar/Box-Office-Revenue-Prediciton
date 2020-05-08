@@ -1,3 +1,0 @@
-name: box_office_pred
-dependencies:
-  - python=3.7
