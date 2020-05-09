@@ -10,7 +10,7 @@ from matplotlib.colors import rgb_to_hsv
 import seaborn as sns
 import matplotlib.pyplot as plt
 %matplotlib inline
-sns.set()
+sns.set(font_scale=1.3)
 ```
 
 
@@ -765,7 +765,7 @@ plt.show()
 
 
 ```python
-fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(25, 15), sharey=False)
+fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(30, 15), sharey=False)
 
 train_na = train_raw.isna().sum().sort_values(ascending=False)
 sns.barplot(train_na.values, train_na.index, orient='h', ax=axes[0])
@@ -778,6 +778,10 @@ axes[1].set_title('Test Null Values:')
 plt.show()
 ```
 
+
+![svg](README_files/README_19_0.svg)
+
+
 `belongs_to_collection` - many movies aren't part of a collection. ("Logical" Null)
  
 `homepage` - Not useful, we can drop it.
@@ -788,7 +792,7 @@ plt.show()
 
 
 ```python
-fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(25, 15), sharey=False)
+fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(30, 15), sharey=False)
 
 train_na = train_raw.isin(['[]', '{}', '']).sum().sort_values(ascending=False)
 sns.barplot(train_na.values, train_na.index, orient='h', ax=axes[0])
@@ -809,7 +813,7 @@ Everything below 10% of the data, and thus ignorable.
 
 
 ```python
-fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(25, 15), sharey=False)
+fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(30, 15), sharey=False)
 
 train_na = train_raw.eq(0).sum().sort_values(ascending=False)
 sns.barplot(train_na.values, train_na.index, orient='h', ax=axes[0])
@@ -843,14 +847,8 @@ Following our data exploration, we won't use  the following features:
 
 
 ```python
-def drop_features(df: pd.DataFrame):
-    removed_columns = ['backdrop_path', 'homepage', 'poster_path', 'imdb_id', 'video', 'status']
-    return df.drop(columns=removed_columns, axis=1).set_index('id')
-    
-```
+from feature_engineering import *
 
-
-```python
 train = drop_features(train_raw)
 train_X, train_Y = train.drop('revenue', axis=1), train['revenue']
 test = drop_features(test_raw)
@@ -859,61 +857,24 @@ test_X, test_Y = test.drop('revenue', axis=1), test['revenue']
 
 ### Feature Transformations:
 
-First, we should handle with all nested container attributes:
+First, we should handle with all nested collections attributes.
 
+We used `eval` to convert the string representation of collection to an object.
 
-```python
-def eval_or_nan(obj):
-    if obj and pd.notnull(obj) and isinstance(obj, str):
-        return eval(obj)
-    return None
+Then, we've exploded (column-wise) selected attributes from each nested object.
 
-def map_attribute(obj, attribute_name: str):
-    if obj:
-        iterable = eval(obj) if isinstance(obj, str) else obj
-        return tuple(map(lambda x: x.get(attribute_name, None), iterable))
-    return None
+The following attributes were added (mapped):
 
-def features_flattening(df: pd.DataFrame):
-    df = df.copy()
+- `belongs_to_collection.id` : If a movie belongs to a collection, then we keep collection id, else None.
+- `genres` : Containing the genre `name` attributes
+- `production_comapnies.id` & `production_comapnies.origin_country` : List of production companies id attribute & production companies origin country.
+- `production_countries` : List of countries (`iso_3166`) where the movie was filmed.
+- `release_month`, `release_quarter`, `release_year` : The month, quarter & year the film was released on.
+- `spoken_languages` : List of spoken languages in a movie (`iso_639` attribute).
+- `Keywords.id` : List of id attribute for each Keyword.
+- `cast.id` & `cast.gender` : List of id & gender (attributes) from `cast` member.
+- `crew.id` & `crew.department` : List of id & department (attributes) from `crew` member.
 
-    df['belongs_to_collection'] = df.belongs_to_collection.apply(eval_or_nan)
-    df['belongs_to_collection.id'] = df.belongs_to_collection\
-                                            .apply(lambda x: None if pd.isna(x) else x['id']).astype('Int64')
-
-
-    df['genres'] = df.genres.apply(lambda gs: tuple(g['name'] for g in eval(gs)))
-
-    df['production_companies'] = df.production_companies.apply(eval_or_nan)
-    df['production_companies.id'] = df.production_companies\
-                                            .apply(lambda companies: map_attribute(companies, 'id'))
-    df['production_companies.origin_country'] = df.production_companies\
-                                            .apply(lambda companies: map_attribute(companies, 'origin_country'))
-
-    df['production_countries'] = df.production_countries.apply(lambda countries: map_attribute(countries, 'iso_3166_1'))
-
-    df['release_date'] = pd.to_datetime(df.release_date)
-    df['release_month'] = df.release_date.dt.month
-    df['release_quarter'] = df.release_date.dt.quarter
-    df['release_year'] = df.release_date.dt.year
-
-    df['spoken_languages'] = df.spoken_languages.apply(lambda langs: map_attribute(langs, 'iso_639_1'))
-
-    df['Keywords'] = df.Keywords.apply(eval_or_nan)
-    df['Keywords.id'] =df.Keywords.apply(lambda keywords: map_attribute(keywords, 'id'))
-
-    df['cast'] = df.cast.apply(eval_or_nan)
-    df['cast.id'] = df.cast.apply(lambda actors: map_attribute(actors, 'id'))
-    df['cast.gender'] = df.cast.apply(lambda actors: map_attribute(actors, 'gender')) # Gender ratio
-
-    df['crew'] = df.crew.apply(eval)
-    df['crew.id'] = df.crew.apply(lambda crew: map_attribute(crew, 'id'))
-    df['crew.department'] = df.crew.apply(lambda crew: map_attribute(crew, 'department')) # Dept size
-    
-    df.drop(['crew', 'cast', 'Keywords', 'belongs_to_collection', 'release_date'], axis=1, inplace=True)
-
-    return df
-```
 
 
 ```python
@@ -948,7 +909,6 @@ flattened_train.head()
       <th>original_title</th>
       <th>overview</th>
       <th>popularity</th>
-      <th>production_companies</th>
       <th>production_countries</th>
       <th>runtime</th>
       <th>spoken_languages</th>
@@ -994,7 +954,6 @@ flattened_train.head()
       <th></th>
       <th></th>
       <th></th>
-      <th></th>
     </tr>
   </thead>
   <tbody>
@@ -1006,7 +965,6 @@ flattened_train.head()
       <td>Spider-Man 3</td>
       <td>The seemingly invincible Spider-Man goes up ag...</td>
       <td>22.024</td>
-      <td>[{'id': 19551, 'logo_path': '/2WpWp9b108hizjHK...</td>
       <td>(US,)</td>
       <td>139.0</td>
       <td>(en, fr)</td>
@@ -1034,7 +992,6 @@ flattened_train.head()
       <td>Silent Night, Deadly Night Part 2</td>
       <td>After being traumatized by his brother Billy's...</td>
       <td>4.756</td>
-      <td>[{'id': 18924, 'logo_path': None, 'name': 'Sil...</td>
       <td>(US,)</td>
       <td>88.0</td>
       <td>(en,)</td>
@@ -1062,7 +1019,6 @@ flattened_train.head()
       <td>Scotty and the Secret History of Hollywood</td>
       <td>A deliciously scandalous portrait of unsung Ho...</td>
       <td>4.746</td>
-      <td>[{'id': 88564, 'logo_path': '/pn3p12IC4Tb0K8re...</td>
       <td>(US,)</td>
       <td>98.0</td>
       <td>(en,)</td>
@@ -1090,7 +1046,6 @@ flattened_train.head()
       <td>Hellraiser</td>
       <td>An unfaithful wife encounters the zombie of he...</td>
       <td>13.828</td>
-      <td>[{'id': 1950, 'logo_path': None, 'name': 'New ...</td>
       <td>(GB,)</td>
       <td>94.0</td>
       <td>(en,)</td>
@@ -1118,7 +1073,6 @@ flattened_train.head()
       <td>National Lampoon's Vacation</td>
       <td>Clark Griswold is on a quest to take his famil...</td>
       <td>15.070</td>
-      <td>[{'id': 174, 'logo_path': '/IuAlhI9eVC9Z8UQWOI...</td>
       <td>(US,)</td>
       <td>99.0</td>
       <td>(en,)</td>
@@ -1177,7 +1131,6 @@ flattened_test.head()
       <th>original_title</th>
       <th>overview</th>
       <th>popularity</th>
-      <th>production_companies</th>
       <th>production_countries</th>
       <th>runtime</th>
       <th>spoken_languages</th>
@@ -1223,7 +1176,6 @@ flattened_test.head()
       <th></th>
       <th></th>
       <th></th>
-      <th></th>
     </tr>
   </thead>
   <tbody>
@@ -1235,7 +1187,6 @@ flattened_test.head()
       <td>Life</td>
       <td>The six-member crew of the International Space...</td>
       <td>17.409</td>
-      <td>[{'id': 5, 'logo_path': '/71BqEFAF4V3qjjMPCpLu...</td>
       <td>(US,)</td>
       <td>103.0</td>
       <td>(cn, en, ja)</td>
@@ -1263,7 +1214,6 @@ flattened_test.head()
       <td>क्रैजी 4</td>
       <td>A psychiatrist spends the majority of his time...</td>
       <td>2.257</td>
-      <td>[{'id': 64779, 'logo_path': None, 'name': 'Fil...</td>
       <td>(IN,)</td>
       <td>110.0</td>
       <td>(hi,)</td>
@@ -1291,7 +1241,6 @@ flattened_test.head()
       <td>A Goofy Movie</td>
       <td>Though Goofy always means well, his amiable cl...</td>
       <td>13.558</td>
-      <td>[{'id': 3475, 'logo_path': '/jTPNzDEn7eHmp3nEX...</td>
       <td>(FR, US)</td>
       <td>78.0</td>
       <td>(en,)</td>
@@ -1319,7 +1268,6 @@ flattened_test.head()
       <td>Левиафан</td>
       <td>In a Russian coastal town, Kolya is forced to ...</td>
       <td>7.158</td>
-      <td>[{'id': 5630, 'logo_path': '/s0mHCw53fp6EAapR7...</td>
       <td>(RU,)</td>
       <td>141.0</td>
       <td>(ru,)</td>
@@ -1347,7 +1295,6 @@ flattened_test.head()
       <td>The Kid</td>
       <td>A tramp cares for a boy after he's abandoned a...</td>
       <td>10.523</td>
-      <td>[{'id': 3245, 'logo_path': '/9dBTQp9XitrHkx20i...</td>
       <td>(US,)</td>
       <td>68.0</td>
       <td>(xx,)</td>
@@ -1375,96 +1322,24 @@ flattened_test.head()
 
 #### Extract new features:
 
+Now we can try to manipulate the features to extract more information:
 
-```python
-from collections import Counter
-
-def map_and_max(collection, mapping_dict):
-    return max(map(mapping_dict.get, collection)) if collection else None
-
-def smart_len(x, split_char= None):
-    if split_char:
-        return len(x.split(" ")) if pd.notnull(x) else 0
-    return len(x) if pd.notnull(x) else 0
-
-def get_element_frequency(df, attribute):
-    return Counter(df[attribute].dropna().sum())
-
-# Gender actor ratio: 0 is unspecified, 1 is female, and 2 is male
-def genders_ratio(genders):
-    arr = np.array(genders)
-    males = (arr == 1).sum()
-    females = (arr == 2).sum()
-    if males or females:
-        return males / (females + males)
-    return 0
-
-def feature_extraction(df: pd.DataFrame):
-    df = df.copy()
-
-    # Collection size:
-    df['collection_size'] = df.groupby('belongs_to_collection.id')['belongs_to_collection.id']\
-                                    .transform('count').fillna(0).astype(int).copy()
-
-    # Company with most productions: (In data)
-    company_size_dict = get_element_frequency(df, 'production_companies.id') # {company_id : company_size}
-    df['biggest_production_company_size'] = df['production_companies.id']\
-                                        .apply(lambda companies: map_and_max(companies, company_size_dict))\
-                                        .fillna(0).astype(int)
-
-    # Country with most production companies
-    id_country_set = set(df.production_companies
-                        .apply(lambda xs: [(x['id'], x['origin_country']) for x in xs if x['origin_country']])
-                        .sum())
-    company_per_country = Counter(country for comp_id, country in id_country_set)
-    company_per_country[''] = 0 # Update no-countries to 0
-    df['most_companies_country_size'] = df['production_companies.origin_country']\
-                                    .apply(lambda companies: map_and_max(companies, company_per_country))\
-                                    .fillna(0).astype(int)
-    
-    # Largest production country size:
-    country_size_dict = get_element_frequency(df, 'production_countries') # {country : movie_count}
-    df['most_productions_country_size'] = df['production_countries']\
-                                        .apply(lambda countries: map_and_max(countries, country_size_dict))\
-                                        .fillna(0).astype(int)
-    # Males/ Females+Males ratio:
-    df['cast.gender_ratio'] = df['cast.gender'].apply(genders_ratio)
-
-    # Num of spoken languages
-    df['spoken_lang_num'] = df.spoken_languages.apply(len)
-
-    # Word\Char count:
-    df['overview_word_count'] = df.overview.apply(lambda x: smart_len(x, ' ')) # Overview word-count
-    df['tagline_char_count'] = df.tagline.apply(smart_len) # tagline character-count
-    df['title_char_count'] = df.title.apply(smart_len) # title character-count
-
-    # Cast size:
-    df['cast_size'] = df['cast.id'].apply(smart_len)
-
-    # Crew size:
-    df['crew_size'] = df['crew.id'].apply(smart_len)
-
-    # Dept. size:
-    dept_size_df = df['crew.department'].apply(lambda x: pd.Series(Counter(x)))\
-                        .add_suffix('_depart_size')\
-                        .astype('Int64')
-    dept_size_df.dropna(axis=1, thresh= dept_size_df.shape[0] * 0.20, inplace=True) # Drop columns with less than 20% data
-    dept_size_df.fillna(0, inplace=True) # Missing value imputation with 0
-    df = pd.concat([df, dept_size_df], axis=1)
-
-    # Mean by years:
-    mean_by_year = df.groupby("release_year")[['runtime', 'budget', 'popularity']]\
-                        .aggregate('mean')\
-                        .rename(columns= {  'runtime' : 'avg_runtime_by_year',
-                                            'budget' : 'avg_budget_by_year',
-                                            'popularity' : 'avg_popularity_by_year'})
-    df = df.join(mean_by_year, how='left', on='release_year')
-
-    # Original title changed:
-    df['title_changed'] = (df['original_title'] != df['title'])
-
-    return df.drop('production_companies', axis=1)
-```
+- `collection_size` : specify the amount of movies in same collection (within data).
+- `biggest_production_company_size` : The size (film count) of production company with most productions, within the production companies of a film.
+- `most_companies_country_size` : The size (companies count) of country with most productions companies, within the production companies countries of a film.
+- `most_productions_country_size` : The size (film count) of a production county, with most productions, within the production countries of a film.
+- `cast.gender_ratio` : The gender ratio (`Males / Females + Males`) of cast.
+- `spoken_lang_num` : The amount of spoken languages in a film.
+- `overview_word_count` : Amount of words (whitespaces) in overview.
+- `tagline_char_count` : The length (characters) of a tagline.
+- `title_char_count` : The length (characters) of a title.
+- `cast_size` : Amount of cast-members in a film.
+- `crew_size` : Amount of crew-members in a film.
+- `[Department Name]_depart_size` : The size of department in a film.
+- `avg_runtime_by_year` : Mean runtime of films in the released year of a movie.
+- `avg_budget_by_year` : Mean budget of films in the released year of a movie.
+- `avg_popularity_by_year` : Mean popularity of films in the released year of a movie.
+- `title_changed` : Boolean indicating whether the original title is different from title.
 
 
 ```python
@@ -1528,17 +1403,17 @@ extracted_train.head()
       <th>title_char_count</th>
       <th>cast_size</th>
       <th>crew_size</th>
-      <th>Production_depart_size</th>
-      <th>Writing_depart_size</th>
+      <th>Art_depart_size</th>
+      <th>Camera_depart_size</th>
+      <th>Costume &amp; Make-Up_depart_size</th>
+      <th>Crew_depart_size</th>
       <th>Directing_depart_size</th>
       <th>Editing_depart_size</th>
-      <th>Art_depart_size</th>
-      <th>Costume &amp; Make-Up_depart_size</th>
-      <th>Camera_depart_size</th>
-      <th>Sound_depart_size</th>
-      <th>Crew_depart_size</th>
-      <th>Visual Effects_depart_size</th>
       <th>Lighting_depart_size</th>
+      <th>Production_depart_size</th>
+      <th>Sound_depart_size</th>
+      <th>Visual Effects_depart_size</th>
+      <th>Writing_depart_size</th>
       <th>avg_runtime_by_year</th>
       <th>avg_budget_by_year</th>
       <th>avg_popularity_by_year</th>
@@ -1636,17 +1511,17 @@ extracted_train.head()
       <td>12</td>
       <td>137</td>
       <td>57</td>
-      <td>23</td>
-      <td>5</td>
-      <td>2</td>
-      <td>1</td>
       <td>19</td>
-      <td>2</td>
       <td>3</td>
+      <td>2</td>
       <td>1</td>
+      <td>2</td>
       <td>1</td>
       <td>0</td>
+      <td>23</td>
+      <td>1</td>
       <td>0</td>
+      <td>5</td>
       <td>106.662651</td>
       <td>2.688542e+07</td>
       <td>9.319018</td>
@@ -1689,17 +1564,17 @@ extracted_train.head()
       <td>33</td>
       <td>52</td>
       <td>15</td>
-      <td>1</td>
-      <td>8</td>
-      <td>1</td>
-      <td>1</td>
-      <td>0</td>
       <td>0</td>
       <td>1</td>
-      <td>1</td>
+      <td>0</td>
       <td>2</td>
+      <td>1</td>
+      <td>1</td>
       <td>0</td>
+      <td>1</td>
+      <td>1</td>
       <td>0</td>
+      <td>8</td>
       <td>103.486486</td>
       <td>6.727433e+06</td>
       <td>8.119851</td>
@@ -1742,15 +1617,15 @@ extracted_train.head()
       <td>42</td>
       <td>7</td>
       <td>57</td>
-      <td>20</td>
+      <td>1</td>
+      <td>6</td>
       <td>0</td>
+      <td>4</td>
       <td>1</td>
       <td>16</td>
-      <td>1</td>
       <td>0</td>
-      <td>6</td>
+      <td>20</td>
       <td>9</td>
-      <td>4</td>
       <td>0</td>
       <td>0</td>
       <td>109.064286</td>
@@ -1795,17 +1670,17 @@ extracted_train.head()
       <td>10</td>
       <td>22</td>
       <td>71</td>
-      <td>9</td>
-      <td>2</td>
+      <td>5</td>
+      <td>4</td>
+      <td>7</td>
+      <td>20</td>
       <td>6</td>
       <td>3</td>
-      <td>5</td>
-      <td>7</td>
-      <td>4</td>
-      <td>8</td>
-      <td>20</td>
-      <td>4</td>
       <td>3</td>
+      <td>9</td>
+      <td>8</td>
+      <td>4</td>
+      <td>2</td>
       <td>103.486486</td>
       <td>6.727433e+06</td>
       <td>8.119851</td>
@@ -1848,17 +1723,17 @@ extracted_train.head()
       <td>27</td>
       <td>24</td>
       <td>6</td>
-      <td>1</td>
-      <td>1</td>
-      <td>1</td>
+      <td>0</td>
       <td>1</td>
       <td>0</td>
       <td>0</td>
       <td>1</td>
       <td>1</td>
       <td>0</td>
+      <td>1</td>
+      <td>1</td>
       <td>0</td>
-      <td>0</td>
+      <td>1</td>
       <td>101.666667</td>
       <td>6.459246e+06</td>
       <td>7.817860</td>
@@ -1932,17 +1807,17 @@ extracted_test.head()
       <th>title_char_count</th>
       <th>cast_size</th>
       <th>crew_size</th>
-      <th>Production_depart_size</th>
-      <th>Camera_depart_size</th>
-      <th>Writing_depart_size</th>
       <th>Art_depart_size</th>
-      <th>Sound_depart_size</th>
-      <th>Editing_depart_size</th>
+      <th>Camera_depart_size</th>
       <th>Costume &amp; Make-Up_depart_size</th>
-      <th>Visual Effects_depart_size</th>
-      <th>Directing_depart_size</th>
       <th>Crew_depart_size</th>
+      <th>Directing_depart_size</th>
+      <th>Editing_depart_size</th>
       <th>Lighting_depart_size</th>
+      <th>Production_depart_size</th>
+      <th>Sound_depart_size</th>
+      <th>Visual Effects_depart_size</th>
+      <th>Writing_depart_size</th>
       <th>avg_runtime_by_year</th>
       <th>avg_budget_by_year</th>
       <th>avg_popularity_by_year</th>
@@ -2040,17 +1915,17 @@ extracted_test.head()
       <td>4</td>
       <td>16</td>
       <td>82</td>
-      <td>10</td>
+      <td>11</td>
       <td>6</td>
-      <td>2</td>
-      <td>11</td>
-      <td>11</td>
-      <td>3</td>
       <td>7</td>
-      <td>19</td>
-      <td>5</td>
       <td>8</td>
+      <td>5</td>
+      <td>3</td>
       <td>0</td>
+      <td>10</td>
+      <td>11</td>
+      <td>19</td>
+      <td>2</td>
       <td>111.184615</td>
       <td>2.342561e+07</td>
       <td>11.716723</td>
@@ -2093,17 +1968,17 @@ extracted_test.head()
       <td>8</td>
       <td>11</td>
       <td>15</td>
+      <td>1</td>
+      <td>1</td>
+      <td>1</td>
+      <td>2</td>
+      <td>1</td>
+      <td>1</td>
+      <td>0</td>
       <td>4</td>
-      <td>1</td>
-      <td>2</td>
-      <td>1</td>
-      <td>2</td>
-      <td>1</td>
-      <td>1</td>
-      <td>0</td>
-      <td>1</td>
       <td>2</td>
       <td>0</td>
+      <td>2</td>
       <td>106.544118</td>
       <td>2.582474e+07</td>
       <td>9.763456</td>
@@ -2146,17 +2021,17 @@ extracted_test.head()
       <td>13</td>
       <td>17</td>
       <td>23</td>
+      <td>1</td>
+      <td>0</td>
+      <td>0</td>
+      <td>2</td>
+      <td>2</td>
+      <td>1</td>
+      <td>0</td>
       <td>3</td>
-      <td>0</td>
-      <td>4</td>
-      <td>1</td>
       <td>8</td>
-      <td>1</td>
-      <td>0</td>
       <td>2</td>
-      <td>2</td>
-      <td>2</td>
-      <td>0</td>
+      <td>4</td>
       <td>112.129032</td>
       <td>2.744901e+07</td>
       <td>10.640065</td>
@@ -2199,17 +2074,17 @@ extracted_test.head()
       <td>9</td>
       <td>21</td>
       <td>30</td>
+      <td>3</td>
+      <td>3</td>
+      <td>2</td>
+      <td>2</td>
+      <td>1</td>
+      <td>1</td>
+      <td>3</td>
       <td>6</td>
-      <td>3</td>
-      <td>2</td>
-      <td>3</td>
       <td>5</td>
-      <td>1</td>
       <td>2</td>
       <td>2</td>
-      <td>1</td>
-      <td>2</td>
-      <td>3</td>
       <td>107.153846</td>
       <td>1.739839e+07</td>
       <td>9.930731</td>
@@ -2254,15 +2129,15 @@ extracted_test.head()
       <td>12</td>
       <td>1</td>
       <td>2</td>
-      <td>1</td>
-      <td>1</td>
-      <td>1</td>
-      <td>1</td>
       <td>0</td>
-      <td>0</td>
-      <td>3</td>
       <td>2</td>
+      <td>3</td>
+      <td>1</td>
       <td>0</td>
+      <td>1</td>
+      <td>1</td>
+      <td>0</td>
+      <td>1</td>
       <td>68.000000</td>
       <td>2.500000e+05</td>
       <td>10.523000</td>
@@ -2276,131 +2151,16 @@ extracted_test.head()
 
 #### Dummy variables, Dummy variables everywhere
 
+Our data contain **many** categorical features, we need to convert them to dummy variables before any learning can be preformed.
 
-```python
-from sklearn.preprocessing import MultiLabelBinarizer
+- **Keywords** : Since there are roughly `10,000` unique keywords in train data, we will use only the top 20 most-frequent keywords in train. This will provide high confidence that these keywords will be meaningful in validation\test data.
+- **Genres** : We will use all genres (19), as dummy variables.
+- **Production Companies** : Since there are **many** production companies (over `70,000`), we will be create a dummy variable from the top 10 most-frequent production companies in train data.
+- **Production Countries** : We will use the top 10 most-frequent production countries in train data.
+- **Spoken Languages** : We will use the top 10 most-frequent spoken languages in train data.
+- **Original Language** : We will use the top 10 most-frequent original language in train data.
 
-TRAIN_COLUMNS = dict()
-
-def nan_to_tuple(x):
-    return x if x else tuple()
-
-def add_dummies_test(df: pd.DataFrame):
-    df = df.copy()
-    
-    mlb = MultiLabelBinarizer()
-
-    # Keywords: (10003 unique)
-    dummy_keywords = pd.DataFrame(mlb.fit_transform(df['Keywords.id'].apply(nan_to_tuple)),
-                                    columns=[f"keyword_{kw_id}" for kw_id in mlb.classes_], 
-                                    index=df.index)
-    # keyword_hist = dummy_keywords.sum()
-    # dummy_keywords = dummy_keywords.loc[:, keyword_hist > keyword_hist.quantile(0.99) ] # Top 1% keywords
-    dummy_keywords = dummy_keywords[TRAIN_COLUMNS['dummy_keywords']]
-    df = pd.concat([df, dummy_keywords], axis=1)
-
-    # Genres:
-    dummy_genres = pd.DataFrame(mlb.fit_transform(df.genres.apply(nan_to_tuple)),
-                            columns=[f"genre_{cl}" for cl in mlb.classes_], 
-                            index=df.index)
-    df = pd.concat([df, dummy_genres], axis=1)
-
-    # Companies:
-    dummy_companies = pd.DataFrame(mlb.fit_transform(df['production_companies.id'].apply(nan_to_tuple)),
-                                columns=[f"company_{cl}" for cl in mlb.classes_], 
-                                index=df.index)
-    dummy_companies = dummy_companies[TRAIN_COLUMNS['dummy_companies']]
-    df = pd.concat([df, dummy_companies], axis=1) # Maybe biggest company size is enough...   
-
-    # Production countries:
-    dummy_countries =pd.DataFrame(mlb.fit_transform(df.production_countries.apply(nan_to_tuple)),
-                                columns=[f"country_{cl}" for cl in mlb.classes_], 
-                                index=df.index)
-    dummy_countries = dummy_countries[TRAIN_COLUMNS['dummy_countries']]                                
-    df = pd.concat([df, dummy_countries], axis=1)
-
-    # Spoken Languages:
-    dummy_lang = pd.DataFrame(mlb.fit_transform(df.spoken_languages.apply(nan_to_tuple)),
-                            columns=[f"spoken_lang_{cl}" for cl in mlb.classes_], 
-                            index=df.index)
-    dummy_lang = dummy_lang[TRAIN_COLUMNS['dummy_lang']]                            
-    df = pd.concat([df, dummy_lang], axis=1)
-
-    # Cast:
-    # dummy_cast = pd.DataFrame(mlb.fit_transform(df['cast.id'].apply(nan_to_tuple)),
-    #                             columns=[f"cast_{cl}" for cl in mlb.classes_], 
-    #                             index=df.index)
-    # cast_hist = dummy_cast.sum()                                
-    # dummy_cast = dummy_cast.loc[:, cast_hist > 20] # Removes cast with lower movies than 20  
-    # df = pd.concat([df, dummy_cast], axis=1)
-
-    # Original Language dummy:
-    dummy_orig_lang = pd.get_dummies(df.original_language, prefix="original_lang")
-    dummy_orig_lang = dummy_orig_lang[TRAIN_COLUMNS['dummy_orig_lang']]
-    df = pd.concat([df, dummy_orig_lang], axis=1)
-
-    return df
-
-
-def add_dummies_train(df: pd.DataFrame):
-    df = df.copy()
-
-    mlb = MultiLabelBinarizer()
-
-    # Keywords: (10003 unique)
-    dummy_keywords = pd.DataFrame(mlb.fit_transform(df['Keywords.id'].apply(nan_to_tuple)),
-                                    columns=[f"keyword_{kw_id}" for kw_id in mlb.classes_], 
-                                    index=df.index)
-    dummy_keywords = dummy_keywords[dummy_keywords.sum().nlargest(20).index]
-    df = pd.concat([df, dummy_keywords], axis=1)
-    TRAIN_COLUMNS['dummy_keywords'] = dummy_keywords.columns
-
-    # Genres:
-    dummy_genres = pd.DataFrame(mlb.fit_transform(df.genres.apply(nan_to_tuple)),
-                            columns=[f"genre_{cl}" for cl in mlb.classes_], 
-                            index=df.index)
-    df = pd.concat([df, dummy_genres], axis=1)
-
-    # Companies:
-    dummy_companies = pd.DataFrame(mlb.fit_transform(df['production_companies.id'].apply(nan_to_tuple)),
-                                columns=[f"company_{cl}" for cl in mlb.classes_], 
-                                index=df.index)
-    dummy_companies = dummy_companies[dummy_companies.sum().nlargest(10).index]
-    df = pd.concat([df, dummy_companies], axis=1) # Maybe biggest company size is enough...   
-    TRAIN_COLUMNS['dummy_companies'] = dummy_companies.columns
-
-    # Production countries:
-    dummy_countries =pd.DataFrame(mlb.fit_transform(df.production_countries.apply(nan_to_tuple)),
-                                columns=[f"country_{cl}" for cl in mlb.classes_], 
-                                index=df.index)
-    dummy_countries = dummy_countries[dummy_countries.sum().nlargest(10).index]                                
-    df = pd.concat([df, dummy_countries], axis=1)
-    TRAIN_COLUMNS['dummy_countries'] = dummy_countries.columns
-
-    # Spoken Languages:
-    dummy_lang = pd.DataFrame(mlb.fit_transform(df.spoken_languages.apply(nan_to_tuple)),
-                            columns=[f"spoken_lang_{cl}" for cl in mlb.classes_], 
-                            index=df.index)
-    dummy_lang = dummy_lang[dummy_lang.sum().nlargest(10).index]                            
-    df = pd.concat([df, dummy_lang], axis=1)
-    TRAIN_COLUMNS['dummy_lang'] = dummy_lang.columns
-
-    # Cast:
-    # dummy_cast = pd.DataFrame(mlb.fit_transform(df['cast.id'].apply(nan_to_tuple)),
-    #                             columns=[f"cast_{cl}" for cl in mlb.classes_], 
-    #                             index=df.index)
-    # cast_hist = dummy_cast.sum()                                
-    # dummy_cast = dummy_cast.loc[:, cast_hist > 20] # Removes cast with lower movies than 20  
-    # df = pd.concat([df, dummy_cast], axis=1)
-
-    # Original Language dummy:
-    dummy_orig_lang = pd.get_dummies(df.original_language, prefix="original_lang")
-    dummy_orig_lang = dummy_orig_lang[dummy_orig_lang.sum().nlargest(10).index]
-    df = pd.concat([df, dummy_orig_lang], axis=1)
-    TRAIN_COLUMNS['dummy_orig_lang'] = dummy_orig_lang.columns
-
-    return df
-```
+All these dummy variables will be extracted from train data, and be hard coded to use in test preprocessing.
 
 
 ```python
@@ -2434,26 +2194,7 @@ dummy_test.drop(tuple_fields + text_fields, axis=1, inplace=True)
 
 #### Missing values Imputation:
 
-We will use KNN Imputation to find budget & runtime values.
-
-
-```python
-def missing_value_imputation(df: pd.DataFrame):
-    df = df.copy()
-
-    from sklearn.impute import KNNImputer
-
-    df.budget.fillna(0, inplace=True)
-    df.budget.replace(0, -1, inplace= True)
-    
-    df.runtime.fillna(0, inplace=True)
-    df.runtime.replace(0, -1, inplace= True)
-
-    imputer = KNNImputer(missing_values= -1)
-    imputed = imputer.fit_transform(df)
-
-    return pd.DataFrame(imputed, columns=df.columns,index=df.index)
-```
+We will use KNN (`k = 5, Euclidean distance`) Imputation to find budget & runtime for films with zero values.
 
 
 ```python
@@ -2516,17 +2257,17 @@ imputated_train
       <th>title_char_count</th>
       <th>cast_size</th>
       <th>crew_size</th>
-      <th>Production_depart_size</th>
-      <th>Writing_depart_size</th>
+      <th>Art_depart_size</th>
+      <th>Camera_depart_size</th>
+      <th>Costume &amp; Make-Up_depart_size</th>
+      <th>Crew_depart_size</th>
       <th>Directing_depart_size</th>
       <th>Editing_depart_size</th>
-      <th>Art_depart_size</th>
-      <th>Costume &amp; Make-Up_depart_size</th>
-      <th>Camera_depart_size</th>
-      <th>Sound_depart_size</th>
-      <th>Crew_depart_size</th>
-      <th>Visual Effects_depart_size</th>
       <th>Lighting_depart_size</th>
+      <th>Production_depart_size</th>
+      <th>Sound_depart_size</th>
+      <th>Visual Effects_depart_size</th>
+      <th>Writing_depart_size</th>
       <th>avg_runtime_by_year</th>
       <th>avg_budget_by_year</th>
       <th>avg_popularity_by_year</th>
@@ -2750,17 +2491,17 @@ imputated_train
       <td>12.0</td>
       <td>137.0</td>
       <td>57.0</td>
-      <td>23.0</td>
-      <td>5.0</td>
-      <td>2.0</td>
-      <td>1.0</td>
       <td>19.0</td>
-      <td>2.0</td>
       <td>3.0</td>
+      <td>2.0</td>
       <td>1.0</td>
+      <td>2.0</td>
       <td>1.0</td>
       <td>0.0</td>
+      <td>23.0</td>
+      <td>1.0</td>
       <td>0.0</td>
+      <td>5.0</td>
       <td>106.662651</td>
       <td>2.688542e+07</td>
       <td>9.319018</td>
@@ -2866,17 +2607,17 @@ imputated_train
       <td>33.0</td>
       <td>52.0</td>
       <td>15.0</td>
-      <td>1.0</td>
-      <td>8.0</td>
-      <td>1.0</td>
-      <td>1.0</td>
-      <td>0.0</td>
       <td>0.0</td>
       <td>1.0</td>
-      <td>1.0</td>
+      <td>0.0</td>
       <td>2.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
       <td>0.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
       <td>0.0</td>
+      <td>8.0</td>
       <td>103.486486</td>
       <td>6.727433e+06</td>
       <td>8.119851</td>
@@ -2982,15 +2723,15 @@ imputated_train
       <td>42.0</td>
       <td>7.0</td>
       <td>57.0</td>
-      <td>20.0</td>
+      <td>1.0</td>
+      <td>6.0</td>
       <td>0.0</td>
+      <td>4.0</td>
       <td>1.0</td>
       <td>16.0</td>
-      <td>1.0</td>
       <td>0.0</td>
-      <td>6.0</td>
+      <td>20.0</td>
       <td>9.0</td>
-      <td>4.0</td>
       <td>0.0</td>
       <td>0.0</td>
       <td>109.064286</td>
@@ -3098,17 +2839,17 @@ imputated_train
       <td>10.0</td>
       <td>22.0</td>
       <td>71.0</td>
-      <td>9.0</td>
-      <td>2.0</td>
+      <td>5.0</td>
+      <td>4.0</td>
+      <td>7.0</td>
+      <td>20.0</td>
       <td>6.0</td>
       <td>3.0</td>
-      <td>5.0</td>
-      <td>7.0</td>
-      <td>4.0</td>
-      <td>8.0</td>
-      <td>20.0</td>
-      <td>4.0</td>
       <td>3.0</td>
+      <td>9.0</td>
+      <td>8.0</td>
+      <td>4.0</td>
+      <td>2.0</td>
       <td>103.486486</td>
       <td>6.727433e+06</td>
       <td>8.119851</td>
@@ -3214,17 +2955,17 @@ imputated_train
       <td>27.0</td>
       <td>24.0</td>
       <td>6.0</td>
-      <td>1.0</td>
-      <td>1.0</td>
-      <td>1.0</td>
+      <td>0.0</td>
       <td>1.0</td>
       <td>0.0</td>
       <td>0.0</td>
       <td>1.0</td>
       <td>1.0</td>
       <td>0.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
       <td>0.0</td>
-      <td>0.0</td>
+      <td>1.0</td>
       <td>101.666667</td>
       <td>6.459246e+06</td>
       <td>7.817860</td>
@@ -3449,11 +3190,11 @@ imputated_train
       <td>0.0</td>
       <td>0.0</td>
       <td>1.0</td>
-      <td>0.0</td>
-      <td>0.0</td>
+      <td>1.0</td>
       <td>1.0</td>
       <td>0.0</td>
-      <td>1.0</td>
+      <td>0.0</td>
+      <td>0.0</td>
       <td>1.0</td>
       <td>0.0</td>
       <td>0.0</td>
@@ -3563,16 +3304,16 @@ imputated_train
       <td>17.0</td>
       <td>12.0</td>
       <td>1.0</td>
-      <td>2.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.0</td>
       <td>1.0</td>
       <td>2.0</td>
-      <td>1.0</td>
-      <td>1.0</td>
+      <td>0.0</td>
       <td>1.0</td>
       <td>3.0</td>
       <td>0.0</td>
-      <td>0.0</td>
-      <td>0.0</td>
+      <td>2.0</td>
       <td>118.800000</td>
       <td>3.765667e+06</td>
       <td>10.330733</td>
@@ -3678,17 +3419,17 @@ imputated_train
       <td>13.0</td>
       <td>26.0</td>
       <td>16.0</td>
-      <td>4.0</td>
       <td>3.0</td>
-      <td>1.0</td>
-      <td>1.0</td>
-      <td>3.0</td>
-      <td>1.0</td>
       <td>2.0</td>
       <td>1.0</td>
       <td>0.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
       <td>0.0</td>
+      <td>4.0</td>
+      <td>1.0</td>
       <td>0.0</td>
+      <td>3.0</td>
       <td>107.757282</td>
       <td>3.092646e+07</td>
       <td>10.181087</td>
@@ -3794,17 +3535,17 @@ imputated_train
       <td>37.0</td>
       <td>19.0</td>
       <td>22.0</td>
+      <td>2.0</td>
+      <td>2.0</td>
+      <td>1.0</td>
+      <td>0.0</td>
+      <td>2.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
       <td>7.0</td>
+      <td>2.0</td>
+      <td>0.0</td>
       <td>4.0</td>
-      <td>2.0</td>
-      <td>1.0</td>
-      <td>2.0</td>
-      <td>1.0</td>
-      <td>2.0</td>
-      <td>2.0</td>
-      <td>0.0</td>
-      <td>0.0</td>
-      <td>1.0</td>
       <td>108.852941</td>
       <td>3.247979e+07</td>
       <td>10.286375</td>
@@ -3911,16 +3652,16 @@ imputated_train
       <td>19.0</td>
       <td>3.0</td>
       <td>0.0</td>
-      <td>2.0</td>
+      <td>0.0</td>
+      <td>0.0</td>
+      <td>0.0</td>
       <td>1.0</td>
       <td>0.0</td>
       <td>0.0</td>
       <td>0.0</td>
       <td>0.0</td>
       <td>0.0</td>
-      <td>0.0</td>
-      <td>0.0</td>
-      <td>0.0</td>
+      <td>2.0</td>
       <td>106.833333</td>
       <td>1.393333e+07</td>
       <td>9.643452</td>
@@ -4057,17 +3798,17 @@ imputated_test
       <th>title_char_count</th>
       <th>cast_size</th>
       <th>crew_size</th>
-      <th>Production_depart_size</th>
-      <th>Camera_depart_size</th>
-      <th>Writing_depart_size</th>
       <th>Art_depart_size</th>
-      <th>Sound_depart_size</th>
-      <th>Editing_depart_size</th>
+      <th>Camera_depart_size</th>
       <th>Costume &amp; Make-Up_depart_size</th>
-      <th>Visual Effects_depart_size</th>
-      <th>Directing_depart_size</th>
       <th>Crew_depart_size</th>
+      <th>Directing_depart_size</th>
+      <th>Editing_depart_size</th>
       <th>Lighting_depart_size</th>
+      <th>Production_depart_size</th>
+      <th>Sound_depart_size</th>
+      <th>Visual Effects_depart_size</th>
+      <th>Writing_depart_size</th>
       <th>avg_runtime_by_year</th>
       <th>avg_budget_by_year</th>
       <th>avg_popularity_by_year</th>
@@ -4291,17 +4032,17 @@ imputated_test
       <td>4.0</td>
       <td>16.0</td>
       <td>82.0</td>
-      <td>10.0</td>
+      <td>11.0</td>
       <td>6.0</td>
-      <td>2.0</td>
-      <td>11.0</td>
-      <td>11.0</td>
-      <td>3.0</td>
       <td>7.0</td>
-      <td>19.0</td>
-      <td>5.0</td>
       <td>8.0</td>
+      <td>5.0</td>
+      <td>3.0</td>
       <td>0.0</td>
+      <td>10.0</td>
+      <td>11.0</td>
+      <td>19.0</td>
+      <td>2.0</td>
       <td>111.184615</td>
       <td>2.342561e+07</td>
       <td>11.716723</td>
@@ -4407,17 +4148,17 @@ imputated_test
       <td>8.0</td>
       <td>11.0</td>
       <td>15.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>2.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.0</td>
       <td>4.0</td>
-      <td>1.0</td>
-      <td>2.0</td>
-      <td>1.0</td>
-      <td>2.0</td>
-      <td>1.0</td>
-      <td>1.0</td>
-      <td>0.0</td>
-      <td>1.0</td>
       <td>2.0</td>
       <td>0.0</td>
+      <td>2.0</td>
       <td>106.544118</td>
       <td>2.582474e+07</td>
       <td>9.763456</td>
@@ -4523,17 +4264,17 @@ imputated_test
       <td>13.0</td>
       <td>17.0</td>
       <td>23.0</td>
+      <td>1.0</td>
+      <td>0.0</td>
+      <td>0.0</td>
+      <td>2.0</td>
+      <td>2.0</td>
+      <td>1.0</td>
+      <td>0.0</td>
       <td>3.0</td>
-      <td>0.0</td>
-      <td>4.0</td>
-      <td>1.0</td>
       <td>8.0</td>
-      <td>1.0</td>
-      <td>0.0</td>
       <td>2.0</td>
-      <td>2.0</td>
-      <td>2.0</td>
-      <td>0.0</td>
+      <td>4.0</td>
       <td>112.129032</td>
       <td>2.744901e+07</td>
       <td>10.640065</td>
@@ -4639,17 +4380,17 @@ imputated_test
       <td>9.0</td>
       <td>21.0</td>
       <td>30.0</td>
+      <td>3.0</td>
+      <td>3.0</td>
+      <td>2.0</td>
+      <td>2.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>3.0</td>
       <td>6.0</td>
-      <td>3.0</td>
-      <td>2.0</td>
-      <td>3.0</td>
       <td>5.0</td>
-      <td>1.0</td>
       <td>2.0</td>
       <td>2.0</td>
-      <td>1.0</td>
-      <td>2.0</td>
-      <td>3.0</td>
       <td>107.153846</td>
       <td>1.739839e+07</td>
       <td>9.930731</td>
@@ -4757,15 +4498,15 @@ imputated_test
       <td>12.0</td>
       <td>1.0</td>
       <td>2.0</td>
-      <td>1.0</td>
-      <td>1.0</td>
-      <td>1.0</td>
-      <td>1.0</td>
       <td>0.0</td>
-      <td>0.0</td>
-      <td>3.0</td>
       <td>2.0</td>
+      <td>3.0</td>
+      <td>1.0</td>
       <td>0.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.0</td>
+      <td>1.0</td>
       <td>68.000000</td>
       <td>2.500000e+05</td>
       <td>10.523000</td>
@@ -4987,17 +4728,17 @@ imputated_test
       <td>7.0</td>
       <td>21.0</td>
       <td>10.0</td>
+      <td>0.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.0</td>
+      <td>1.0</td>
       <td>2.0</td>
-      <td>1.0</td>
-      <td>1.0</td>
       <td>0.0</td>
       <td>2.0</td>
       <td>2.0</td>
-      <td>1.0</td>
       <td>0.0</td>
       <td>1.0</td>
-      <td>0.0</td>
-      <td>0.0</td>
       <td>108.135593</td>
       <td>2.692080e+07</td>
       <td>8.291288</td>
@@ -5103,17 +4844,17 @@ imputated_test
       <td>16.0</td>
       <td>22.0</td>
       <td>152.0</td>
-      <td>14.0</td>
-      <td>14.0</td>
-      <td>1.0</td>
       <td>19.0</td>
-      <td>18.0</td>
-      <td>5.0</td>
+      <td>14.0</td>
       <td>21.0</td>
-      <td>25.0</td>
-      <td>3.0</td>
       <td>19.0</td>
+      <td>3.0</td>
+      <td>5.0</td>
       <td>13.0</td>
+      <td>14.0</td>
+      <td>18.0</td>
+      <td>25.0</td>
+      <td>1.0</td>
       <td>112.081967</td>
       <td>2.795279e+07</td>
       <td>9.206787</td>
@@ -5219,17 +4960,17 @@ imputated_test
       <td>12.0</td>
       <td>19.0</td>
       <td>13.0</td>
-      <td>1.0</td>
-      <td>2.0</td>
-      <td>1.0</td>
       <td>3.0</td>
+      <td>2.0</td>
       <td>1.0</td>
       <td>1.0</td>
-      <td>1.0</td>
-      <td>0.0</td>
       <td>2.0</td>
       <td>1.0</td>
       <td>0.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.0</td>
+      <td>1.0</td>
       <td>101.181818</td>
       <td>1.016818e+07</td>
       <td>9.626909</td>
@@ -5335,17 +5076,17 @@ imputated_test
       <td>7.0</td>
       <td>31.0</td>
       <td>61.0</td>
-      <td>11.0</td>
-      <td>1.0</td>
-      <td>3.0</td>
       <td>4.0</td>
+      <td>1.0</td>
       <td>10.0</td>
+      <td>10.0</td>
+      <td>3.0</td>
       <td>2.0</td>
+      <td>1.0</td>
+      <td>11.0</td>
       <td>10.0</td>
       <td>6.0</td>
       <td>3.0</td>
-      <td>10.0</td>
-      <td>1.0</td>
       <td>112.200000</td>
       <td>2.674182e+07</td>
       <td>9.056436</td>
@@ -5451,17 +5192,17 @@ imputated_test
       <td>6.0</td>
       <td>33.0</td>
       <td>7.0</td>
+      <td>0.0</td>
+      <td>1.0</td>
+      <td>0.0</td>
+      <td>0.0</td>
+      <td>1.0</td>
+      <td>1.0</td>
+      <td>0.0</td>
       <td>3.0</td>
-      <td>1.0</td>
-      <td>1.0</td>
       <td>0.0</td>
       <td>0.0</td>
       <td>1.0</td>
-      <td>0.0</td>
-      <td>0.0</td>
-      <td>1.0</td>
-      <td>0.0</td>
-      <td>0.0</td>
       <td>108.333333</td>
       <td>3.073030e+07</td>
       <td>10.252697</td>
@@ -5555,33 +5296,89 @@ imputated_test
 
 ## Prediction:
 
+We tried multiple models, while focusing on ensemble methods due to the amount of features.
+
+Then, we used CV for hyperparameters tuning for two selected models:
+
+* Random Forest
+  * number of estimators: One of `100, 200, 500, 1000, 1500, 2000`.
+  * criterion: `mean sqaured error` or `mean absolute error`.
+  * maximum features: One of: `N, Sqaure-root(N), log2(N), 0.2 * N, 0.4 * N, 0.6 * N, 0.8 * N`
+  * maximum depth: One of `10, 20, 30, ..., 200`.
+  * minimum samples split: One of `2, 5, 10 ,20`.
+  * minimum samples in leaf: One of `1, 2, 4, 8, 16`.
+  * bootstrap: `True` or `False`.
+
+* XGBoost
+  * number of estimators: One of `100, 200, 500, 1000, 1500`.
+  * objective function: `Linear` or `Squared Error`.
+  * learning rate: One of `0.01, 0.03, 0.05, .07`.
+  * maximum depth: One of `4, 5, 6, 7, 8, 9, 10, 20`.
+  * gamma (Min. loss reduction threshold): One of `0, 0.3, 0.4, 0.5, 1, 5`.
+  * minimum child weight: One of `1, 4, 5`.
+  * lambda (L2 regularization coef.): One of `0, 1, 5, 10`.
+  * alpha (L1 regularization coef.): One of `0, 1, 2`.
+
+Finally, the following models were chosen:
+
 
 ```python
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_squared_log_error
 
-def train_model(train_X, train_Y):
-    model = GradientBoostingRegressor().fit(train_X, np.log1p(train_Y))
-    return model
+def train_model(train_X, train_Y, model):
+    model.fit(train_X, np.log1p(train_Y))
+
+    with open(f"models/{model.__class__.__name__}.pkl", 'wb') as f:
+        pickle.dump(model, f)
 
 def evaluate_model(test_X, test_Y, model):
     pred = np.expm1(model.predict(test_X))
 
     rmsle = np.sqrt(mean_squared_log_error(test_Y, pred))
-    print(f"RMSLE for Test: {rmsle:.4f}")
+    print(f"RMSLE for Test: {rmsle:.6f}")
 ```
 
 
 ```python
-gbr = train_model(imputated_train, train_Y)
+# XGBoost Model:
+import xgboost as xgb
 
-evaluate_model(imputated_test, test_Y, gbr)
+xg_params = {   'subsample': 0.6, 
+                'reg_lambda': 10, 
+                'reg_alpha': 2, 
+                'objective': 'reg:squarederror', 
+                'n_estimators': 1000, 
+                'min_child_weight': 4, 
+                'max_depth': 7, 
+                'learning_rate': 0.01, 
+                'gamma': 0.5, 
+                'colsample_bytree': 0.6 }
+
+xgb_model = xgb.XGBRegressor(**xg_params, n_jobs= -1)
+train_model(imputated_train, train_Y, xgb_model)
+evaluate_model(imputated_test, test_Y, xgb_model)
 ```
 
-    RMSLE for Test: 1.8466
+    RMSLE for Test: 1.786701
     
 
 
 ```python
+# Random Forest Model:
+from sklearn.ensemble import RandomForestRegressor
 
+rf_params = {   'n_estimators': 1500,
+                'min_samples_split': 2,
+                'min_samples_leaf': 2,
+                'max_features': 0.4,
+                'max_depth': 50,
+                'criterion': 'mae',
+                'bootstrap': False  }
+
+rf_model = RandomForestRegressor(**rf_params, n_jobs= -1)
+train_model(imputated_train, train_Y, rf_model)
+evaluate_model(imputated_test, test_Y, rf_model)
 ```
+
+    RMSLE for Test: 1.831224
+    
